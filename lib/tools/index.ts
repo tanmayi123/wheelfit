@@ -97,9 +97,57 @@ export const runLongTask = tool({
   },
 });
 
+export const searchWayfairProducts = tool({
+  description: "Search Wayfair for furniture products filtered by category and maximum width for wheelchair accessibility",
+  inputSchema: z.object({
+    category: z.string().describe("Furniture category e.g. beds, dressers, floor lamps"),
+    max_width_inches: z.number().describe("Maximum width in inches based on room size minus 36 inch wheelchair clearance"),
+    style: z.string().describe("User style preference e.g. scandinavian minimalist, modern"),
+  }),
+  execute: async ({ category, max_width_inches, style }) => {
+    const response = await fetch("http://127.0.0.1:8002/tools/wayfair-search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category, max_width_inches, max_height_inches: 999, style }),
+    });
+    return await response.json();
+  },
+});
+
+export const scoreProductAccessibility = tool({
+  description: "Score a furniture product for wheelchair accessibility out of 100 based on clearance fit, accessibility design, floor footprint, style match, and price value",
+  inputSchema: z.object({
+    product: z.object({
+      name: z.string(),
+      width_inches: z.number(),
+      height_inches: z.number(),
+      depth_inches: z.number(),
+      price: z.number(),
+      base_type: z.string(),
+      category: z.string(),
+      style_tags: z.array(z.string()),
+    }),
+    room_width_ft: z.number(),
+    room_length_ft: z.number(),
+    user_style: z.string(),
+  }),
+  execute: async ({ product, room_width_ft, room_length_ft, user_style }) => {
+    const response = await fetch("http://127.0.0.1:8001/tools/score-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ product, room_width_ft, room_length_ft, user_style }),
+    });
+    return await response.json();
+  },
+});
+
+
+
 export const chatTools = {
   getWeather,
   calculate,
+  searchWayfairProducts,
+  scoreProductAccessibility,
 };
 
 export const agentTools = {
@@ -107,4 +155,6 @@ export const agentTools = {
   calculate,
   webSearch,
   runLongTask,
+  searchWayfairProducts,
+  scoreProductAccessibility,
 };
