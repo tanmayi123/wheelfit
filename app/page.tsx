@@ -1,5 +1,5 @@
-import { ChatApp } from "@/components/chat-app";
+import { WheelFitApp } from "@/components/wheelfit-app";
 
 export default function Home() {
-  return <ChatApp />;
+  return <WheelFitApp />;
 }
