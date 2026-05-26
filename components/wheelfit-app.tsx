@@ -201,6 +201,7 @@ export function WheelFitApp() {
               placedItems={placedItems}
               onFindFurniture={handleFindFurniture}
               isBusy={isBusy}
+              messages={messages}
             />
           )}
         </div>
