@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { UIMessage } from "ai";
 import type { RoomConfig } from "./PhaseOne";
 import type { PlacedItem as CanvasItem } from "./RoomCanvas";
@@ -18,94 +18,97 @@ const WHEELCHAIR_LABEL: Record<string, string> = {
   transport: "Transport chair",
 };
 
-// Dimension defaults per furniture category (inches)
 const CATEGORY_DIMS: Record<string, { widthIn: number; depthIn: number }> = {
   bed:        { widthIn: 60, depthIn: 80 },
-  beds:       { widthIn: 60, depthIn: 80 },
   desk:       { widthIn: 42, depthIn: 20 },
-  desks:      { widthIn: 42, depthIn: 20 },
   nightstand: { widthIn: 18, depthIn: 16 },
-  nightstands:{ widthIn: 18, depthIn: 16 },
   stand:      { widthIn: 18, depthIn: 16 },
   chair:      { widthIn: 28, depthIn: 30 },
-  chairs:     { widthIn: 28, depthIn: 30 },
   lamp:       { widthIn: 18, depthIn: 18 },
-  lamps:      { widthIn: 18, depthIn: 18 },
   dresser:    { widthIn: 48, depthIn: 18 },
-  dressers:   { widthIn: 48, depthIn: 18 },
   sofa:       { widthIn: 84, depthIn: 34 },
 };
 
-type SuggestedFurniture = {
-  id: string;
+type ComboItem = {
   name: string;
   category: string;
   widthIn: number;
   depthIn: number;
   price: number;
-  url: string;
+};
+
+type ParsedCombo = {
+  id: string;
+  name: string;
+  description: string;
+  items: ComboItem[];
+  totalPrice: number;
 };
 
 function getLastAssistantText(messages: UIMessage[]): string {
-  const assistantMessages = messages.filter((m) => m.role === "assistant");
-  if (assistantMessages.length === 0) return "";
-  const last = assistantMessages[assistantMessages.length - 1];
+  const assistant = messages.filter((m) => m.role === "assistant");
+  if (!assistant.length) return "";
+  const last = assistant[assistant.length - 1];
   return last.parts
     .filter((p) => p.type === "text")
     .map((p) => (p as { type: "text"; text: string }).text)
     .join("");
 }
 
-function extractFurnitureFromText(text: string): SuggestedFurniture[] {
-  if (!text) return [];
-  const results: SuggestedFurniture[] = [];
-  const lines = text.split("\n");
+function dimsForCategory(cat: string): { widthIn: number; depthIn: number } {
+  const normalized = cat.toLowerCase().replace(/s$/, "");
+  return CATEGORY_DIMS[normalized] ?? CATEGORY_DIMS[cat.toLowerCase()] ?? { widthIn: 36, depthIn: 36 };
+}
 
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    // Look for lines with a price
-    const priceMatch = line.match(/\$[\d,]+/);
-    if (!priceMatch) continue;
+function parseComboResponse(text: string): ParsedCombo[] {
+  if (!text.trim()) return [];
 
-    const lower = line.toLowerCase();
-    let category = "";
-    let dims = { widthIn: 36, depthIn: 36 };
+  // Strip markdown code fences
+  let jsonStr = text.trim();
+  const fence = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence) jsonStr = fence[1].trim();
 
-    // Match furniture category keywords in priority order
-    const categoryKeys = Object.keys(CATEGORY_DIMS);
-    for (const key of categoryKeys) {
-      if (lower.includes(key)) {
-        category = key.replace(/s$/, ""); // normalize plural
-        dims = CATEGORY_DIMS[key];
-        break;
+  // Try to extract the JSON object containing "combos"
+  try {
+    const objMatch = jsonStr.match(/\{[\s\S]*"combos"[\s\S]*\}/);
+    if (objMatch) {
+      const data = JSON.parse(objMatch[0]) as {
+        combos: Array<{
+          name?: string;
+          description?: string;
+          items?: Array<{ name?: string; category?: string; price?: number }>;
+          totalPrice?: number;
+        }>;
+      };
+      if (Array.isArray(data.combos)) {
+        return data.combos.slice(0, 3).map((c, i) => {
+          const items: ComboItem[] = (c.items ?? []).map((it) => {
+            const cat = (it.category ?? "").toLowerCase();
+            const dims = dimsForCategory(cat);
+            return {
+              name: it.name ?? "Unknown item",
+              category: cat || "furniture",
+              widthIn: dims.widthIn,
+              depthIn: dims.depthIn,
+              price: it.price ?? 0,
+            };
+          });
+          const total = c.totalPrice ?? items.reduce((s, it) => s + it.price, 0);
+          return {
+            id: `combo-${i}`,
+            name: c.name ?? `Option ${i + 1}`,
+            description: c.description ?? "",
+            items,
+            totalPrice: total,
+          };
+        });
       }
     }
-    if (!category) continue;
-
-    const price = parseFloat(priceMatch[0].replace(/[$,]/g, ""));
-    // Clean up name: strip markdown bold, bullet, price tail
-    const name = line
-      .replace(/\*\*/g, "")
-      .replace(/\$[\d,]+.*$/, "")
-      .replace(/^[-*•#\d.)\s]+/, "")
-      .trim()
-      .slice(0, 60);
-
-    if (!name) continue;
-
-    results.push({
-      id: `${category}-${results.length}`,
-      name,
-      category,
-      ...dims,
-      price,
-      url: "https://wayfair.com",
-    });
-
-    if (results.length >= 3) break;
+  } catch {
+    // JSON parse failed — fall through to empty
   }
 
-  return results;
+  return [];
 }
 
 type Props = {
@@ -119,6 +122,7 @@ type Props = {
 export function PhaseThree({ config, placedItems, onFindFurniture, isBusy, messages }: Props) {
   const { width, length, wheelchairType, style, furniture } = config;
   const turningInches = TURNING_INCHES[wheelchairType];
+  const [selectedComboId, setSelectedComboId] = useState<string | null>(null);
 
   const fixedElements = placedItems.map((p) => ({
     type: p.type,
@@ -128,40 +132,40 @@ export function PhaseThree({ config, placedItems, onFindFurniture, isBusy, messa
     h: p.h,
   }));
 
-  // Compute available space stats for AI message
   const occupiedCells = placedItems.reduce((s, p) => s + p.w * p.h, 0);
   const totalCells = width * length;
   const freeCells = totalCells - occupiedCells;
   const freePercent = Math.round((freeCells / totalCells) * 100);
-
-  const gridData = {
-    room: { widthFt: width, lengthFt: length, widthCells: width, lengthCells: length },
-    wheelchair: { type: wheelchairType, turningDiameterIn: turningInches },
-    fixedElements,
-    availableSpace: { totalCells, occupiedCells, freeCells, freePercent },
-    furnitureNeeded: furniture,
-    style,
-  };
+  const fixedList = placedItems.length
+    ? placedItems.map((p) => `${p.type} at (${p.col},${p.row})`).join(", ")
+    : "none";
 
   const message =
-    `Based on this exact room grid, recommend furniture that will fit in the free space. ` +
-    `For each item include the category so I can place it on the grid. ` +
-    `Keep recommendations to maximum 3 items total so they fit.\n\n` +
-    `Room data:\n${JSON.stringify(gridData, null, 2)}\n\n` +
-    `Check ADA compliance with 36" clearance pathways and recommend Wayfair furniture for each category in the furnitureNeeded list.`;
+    `You are a wheelchair accessibility furniture advisor for WheelFit.\n\n` +
+    `Room: ${width}×${length}ft, ${WHEELCHAIR_LABEL[wheelchairType]}, style: ${style}\n` +
+    `Fixed elements: ${fixedList}\n` +
+    `Wheelchair clearance needed: 36" minimum, ${turningInches}" turning circle\n` +
+    `Free space: ${freePercent}% of ${totalCells} sq ft\n\n` +
+    `Recommend EXACTLY 2 furniture combos for these categories: ${furniture.join(", ")}\n\n` +
+    `Reply with ONLY this JSON (no markdown, no extra text):\n` +
+    `{\n  "combos": [\n    {\n      "name": "Setup name",\n      "description": "One sentence about style and accessibility",\n      "items": [\n        {"name": "Exact product name", "category": "bed", "price": 499}\n      ],\n      "totalPrice": 499\n    }\n  ]\n}\n\n` +
+    `Use realistic Wayfair-style product names. Max 3 items per combo. ` +
+    `Category must be one of: bed, desk, nightstand, chair, lamp, dresser. ` +
+    `Choose items that leave 36" clearance pathways and fit the ${turningInches}" turning circle.`;
 
-  // Parse AI response for furniture suggestions
   const lastAIText = useMemo(() => getLastAssistantText(messages), [messages]);
-  const suggestedFurniture = useMemo(
-    () => extractFurnitureFromText(lastAIText),
-    [lastAIText]
-  );
-
+  const combos = useMemo(() => parseComboResponse(lastAIText), [lastAIText]);
   const hasAIResponse = lastAIText.length > 0;
+  const selectedCombo = combos.find((c) => c.id === selectedComboId) ?? null;
+
+  function handleFindFurnitureClick() {
+    setSelectedComboId(null);
+    onFindFurniture(message);
+  }
 
   return (
     <div className="flex flex-col gap-4 p-6 bg-white h-full overflow-y-auto">
-      {/* Summary card */}
+      {/* Room summary */}
       <div className="rounded-2xl border border-[#E8E8E8] overflow-hidden">
         <div className="px-5 py-3 bg-[#7B2FF7]/5 border-b border-[#E8E8E8]">
           <p className="text-xs font-bold text-[#7B2FF7] uppercase tracking-widest">Room Summary</p>
@@ -189,7 +193,6 @@ export function PhaseThree({ config, placedItems, onFindFurniture, isBusy, messa
               </p>
             </div>
           </div>
-
           <div>
             <p className="text-[10px] text-gray-400 mb-1.5">Furniture Needed</p>
             <div className="flex flex-wrap gap-1.5">
@@ -200,40 +203,13 @@ export function PhaseThree({ config, placedItems, onFindFurniture, isBusy, messa
               ))}
             </div>
           </div>
-
-          {placedItems.length > 0 && (
-            <div>
-              <p className="text-[10px] text-gray-400 mb-1.5">Placed Room Elements</p>
-              <div className="flex flex-wrap gap-1.5">
-                {placedItems.map((p) => (
-                  <span key={p.id} className="px-2.5 py-1 rounded-full text-xs bg-gray-100 text-gray-600 capitalize">
-                    {p.type}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
-      </div>
-
-      {/* ADA checklist */}
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-        <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-2">
-          ADA Compliance Check Includes
-        </p>
-        <ul className="space-y-1 text-xs text-amber-700">
-          <li>• 36" minimum clearance beside every piece of furniture</li>
-          <li>• 60×60" clear turning zone obstacle-free</li>
-          <li>• Seat height 17–19" for chairs and sofas</li>
-          <li>• Storage max 48" tall for seated reach</li>
-          <li>• Open/panel base preferred (footrest clearance)</li>
-        </ul>
       </div>
 
       {/* CTA */}
       <button
         type="button"
-        onClick={() => onFindFurniture(message)}
+        onClick={handleFindFurnitureClick}
         disabled={isBusy}
         className="w-full py-4 rounded-2xl text-base font-bold bg-[#7B2FF7] text-white hover:bg-[#6a1fe0] disabled:opacity-60 disabled:cursor-not-allowed transition-all shadow-md"
       >
@@ -249,27 +225,113 @@ export function PhaseThree({ config, placedItems, onFindFurniture, isBusy, messa
         )}
       </button>
 
-      {/* 2D result visualization — shown once AI has responded */}
-      {hasAIResponse && (
+      {/* ── STEP 1: Combo cards ── */}
+      {hasAIResponse && !isBusy && (
+        <div className="space-y-3">
+          {combos.length > 0 ? (
+            <>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Choose a furniture setup
+              </p>
+              {combos.map((combo) => {
+                const isSelected = selectedComboId === combo.id;
+                return (
+                  <div
+                    key={combo.id}
+                    className={`rounded-2xl border-2 overflow-hidden transition-all ${
+                      isSelected
+                        ? "border-[#7B2FF7] shadow-md shadow-[#7B2FF7]/10"
+                        : "border-[#E8E8E8] hover:border-[#7B2FF7]/40"
+                    }`}
+                  >
+                    {/* Combo header */}
+                    <div
+                      className={`px-4 py-3 flex items-center justify-between ${
+                        isSelected ? "bg-[#7B2FF7]/8" : "bg-gray-50"
+                      }`}
+                    >
+                      <div>
+                        <p className={`text-sm font-bold ${isSelected ? "text-[#7B2FF7]" : "text-gray-900"}`}>
+                          {isSelected && <span className="mr-1.5">✓</span>}
+                          {combo.name}
+                        </p>
+                        {combo.description && (
+                          <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">{combo.description}</p>
+                        )}
+                      </div>
+                      <span className={`text-base font-bold ${isSelected ? "text-[#7B2FF7]" : "text-gray-800"}`}>
+                        ${combo.totalPrice.toLocaleString()}
+                      </span>
+                    </div>
+
+                    {/* Items list */}
+                    <div className="px-4 py-3 space-y-2 bg-white">
+                      {combo.items.map((item, i) => (
+                        <div key={i} className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className="w-1.5 h-1.5 rounded-full shrink-0"
+                              style={{ background: "#7B2FF7" }}
+                            />
+                            <span className="text-xs font-medium text-gray-800 truncate">{item.name}</span>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className="text-[10px] text-gray-400 font-mono">
+                              {item.widthIn}"×{item.depthIn}"
+                            </span>
+                            <span className="text-xs font-semibold text-gray-700">
+                              ${item.price.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Select button */}
+                    <div className="px-4 pb-4">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedComboId(isSelected ? null : combo.id)}
+                        className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                          isSelected
+                            ? "bg-[#7B2FF7]/10 text-[#7B2FF7] border-2 border-[#7B2FF7]"
+                            : "bg-[#7B2FF7] text-white hover:bg-[#6a1fe0]"
+                        }`}
+                      >
+                        {isSelected ? "✓ Selected — view floor plan below" : "Select This Combo"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          ) : (
+            /* AI responded but JSON couldn't be parsed into combos */
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center">
+              <p className="text-xs font-semibold text-amber-700 mb-1">Parsing in progress</p>
+              <p className="text-xs text-amber-600">
+                The AI response is visible in the chat panel on the right. See it for furniture recommendations.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── STEP 2: Floor plan (only after combo selected) ── */}
+      {selectedCombo && (
         <RoomResult
           roomW={width}
           roomL={length}
           fixedElements={fixedElements}
-          suggestedFurniture={
-            suggestedFurniture.length > 0
-              ? suggestedFurniture
-              : furniture.map((cat, i) => {
-                  const dims = CATEGORY_DIMS[cat.toLowerCase()] ?? { widthIn: 36, depthIn: 36 };
-                  return {
-                    id: `fallback-${i}`,
-                    name: cat,
-                    category: cat.toLowerCase(),
-                    ...dims,
-                    price: 0,
-                    url: "https://wayfair.com",
-                  };
-                })
-          }
+          suggestedFurniture={selectedCombo.items.map((item, i) => ({
+            id: `${item.category}-${i}`,
+            name: item.name,
+            category: item.category,
+            widthIn: item.widthIn,
+            depthIn: item.depthIn,
+            price: item.price,
+            url: "https://wayfair.com",
+          }))}
           wheelchairType={wheelchairType}
         />
       )}

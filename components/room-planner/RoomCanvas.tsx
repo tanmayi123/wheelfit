@@ -34,19 +34,6 @@ const ITEM_COLORS: Record<string, { fill: string; stroke: string }> = Object.fro
   SIDEBAR_ITEMS.map((s) => [s.type, { fill: s.fill, stroke: s.stroke }])
 );
 
-// Turning diameter in feet
-const TURNING_DIAMETER: Record<string, number> = {
-  manual: 5,
-  power: 5.583,
-  transport: 4.167,
-};
-
-const TURNING_LABEL: Record<string, string> = {
-  manual: '60" turn',
-  power: '67" turn',
-  transport: '50" turn',
-};
-
 const CELL = 44; // px per foot in SVG viewBox
 
 function bfsFloodFill(
@@ -80,7 +67,7 @@ function bfsFloodFill(
 
   while (queue.length) {
     const [c, r] = queue.shift()!;
-    for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+    for (const [dc, dr] of [[1,0],[-1,0],[0,1],[0,-1]] as [number,number][]) {
       const nc = c + dc, nr = r + dr;
       if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
       const k = `${nc},${nr}`;
@@ -100,17 +87,12 @@ export function RoomCanvas({ config, onNext }: Props) {
   const cols = config.width;
   const rows = config.length;
   const [placed, setPlaced] = useState<PlacedItem[]>([]);
-  const [circlePos, setCirclePos] = useState({ cx: cols / 2, cy: rows / 2 });
-  const [draggingCircle, setDraggingCircle] = useState(false);
-  const circleDragOffset = useRef({ x: 0, y: 0 });
   const pendingDrop = useRef<{ type: string; w: number; h: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  const diameter = TURNING_DIAMETER[config.wheelchairType] ?? 5;
   const doors = placed.filter((p) => p.type === "door");
   const reachable = bfsFloodFill(cols, rows, placed, doors);
 
-  // Set of all cells occupied by non-passable items
   const blockedCells = new Set<string>();
   for (const item of placed) {
     if (item.type === "door" || item.type === "window") continue;
@@ -138,7 +120,6 @@ export function RoomCanvas({ config, onNext }: Props) {
     };
   }
 
-  // HTML5 drag-from-sidebar
   function onSidebarDragStart(type: string, w: number, h: number) {
     pendingDrop.current = { type, w, h };
   }
@@ -165,34 +146,12 @@ export function RoomCanvas({ config, onNext }: Props) {
     setPlaced((prev) => prev.filter((p) => p.id !== id));
   }
 
-  // Turning-circle drag via SVG mouse events
-  function onCircleMouseDown(e: React.MouseEvent) {
-    e.stopPropagation();
-    const { x, y } = toSVGCoords(e.clientX, e.clientY);
-    circleDragOffset.current = { x: x / CELL - circlePos.cx, y: y / CELL - circlePos.cy };
-    setDraggingCircle(true);
-  }
-
-  function onSVGMouseMove(e: React.MouseEvent) {
-    if (!draggingCircle) return;
-    const { x, y } = toSVGCoords(e.clientX, e.clientY);
-    const r = diameter / 2;
-    setCirclePos({
-      cx: Math.max(r, Math.min(cols - r, x / CELL - circleDragOffset.current.x)),
-      cy: Math.max(r, Math.min(rows - r, y / CELL - circleDragOffset.current.y)),
-    });
-  }
-
-  function onSVGMouseUp() {
-    setDraggingCircle(false);
-  }
-
   const vbW = cols * CELL;
   const vbH = rows * CELL;
 
   return (
     <div className="flex flex-col h-full bg-white">
-      {/* Room info bar */}
+      {/* Info bar */}
       <div className="flex items-center gap-3 px-4 pt-3 pb-2 text-xs text-gray-500">
         <span className="font-semibold text-gray-700">{cols} × {rows} ft</span>
         <span className="text-gray-300">|</span>
@@ -238,14 +197,10 @@ export function RoomCanvas({ config, onNext }: Props) {
             ref={svgRef}
             viewBox={`0 0 ${vbW} ${vbH}`}
             className="w-full h-full"
-            style={{ cursor: draggingCircle ? "grabbing" : "default" }}
             onDragOver={onSVGDragOver}
             onDrop={onSVGDrop}
-            onMouseMove={onSVGMouseMove}
-            onMouseUp={onSVGMouseUp}
-            onMouseLeave={onSVGMouseUp}
           >
-            {/* Flood fill background — only when a door exists */}
+            {/* Flood fill — only when a door exists */}
             {doors.length > 0 &&
               Array.from({ length: rows }, (_, r) =>
                 Array.from({ length: cols }, (_, c) => {
@@ -258,10 +213,8 @@ export function RoomCanvas({ config, onNext }: Props) {
                   return (
                     <rect
                       key={k}
-                      x={c * CELL}
-                      y={r * CELL}
-                      width={CELL}
-                      height={CELL}
+                      x={c * CELL} y={r * CELL}
+                      width={CELL} height={CELL}
                       fill={reachable.has(k) ? "#bbf7d0" : "#fecaca"}
                       opacity={0.55}
                     />
@@ -271,25 +224,14 @@ export function RoomCanvas({ config, onNext }: Props) {
 
             {/* Grid lines */}
             {Array.from({ length: cols + 1 }, (_, i) => (
-              <line
-                key={`v${i}`}
-                x1={i * CELL} y1={0} x2={i * CELL} y2={vbH}
-                stroke="#E8E8E8" strokeWidth={0.5}
-              />
+              <line key={`v${i}`} x1={i * CELL} y1={0} x2={i * CELL} y2={vbH} stroke="#E8E8E8" strokeWidth={0.5} />
             ))}
             {Array.from({ length: rows + 1 }, (_, i) => (
-              <line
-                key={`h${i}`}
-                x1={0} y1={i * CELL} x2={vbW} y2={i * CELL}
-                stroke="#E8E8E8" strokeWidth={0.5}
-              />
+              <line key={`h${i}`} x1={0} y1={i * CELL} x2={vbW} y2={i * CELL} stroke="#E8E8E8" strokeWidth={0.5} />
             ))}
 
             {/* Room border */}
-            <rect
-              x={0} y={0} width={vbW} height={vbH}
-              fill="none" stroke="#9CA3AF" strokeWidth={2}
-            />
+            <rect x={0} y={0} width={vbW} height={vbH} fill="none" stroke="#9CA3AF" strokeWidth={2} />
 
             {/* Placed items */}
             {placed.map((item) => {
@@ -297,53 +239,20 @@ export function RoomCanvas({ config, onNext }: Props) {
               return (
                 <g key={item.id} onClick={() => removeItem(item.id)} style={{ cursor: "pointer" }}>
                   <rect
-                    x={item.col * CELL + 1}
-                    y={item.row * CELL + 1}
-                    width={item.w * CELL - 2}
-                    height={item.h * CELL - 2}
-                    fill={colors.fill}
-                    stroke={colors.stroke}
-                    strokeWidth={1.5}
-                    rx={3}
+                    x={item.col * CELL + 1} y={item.row * CELL + 1}
+                    width={item.w * CELL - 2} height={item.h * CELL - 2}
+                    fill={colors.fill} stroke={colors.stroke} strokeWidth={1.5} rx={3}
                   />
                   <text
                     x={(item.col + item.w / 2) * CELL}
                     y={(item.row + item.h / 2) * CELL + 4}
-                    textAnchor="middle"
-                    fontSize={9}
-                    fontWeight="600"
-                    fill={colors.stroke}
+                    textAnchor="middle" fontSize={9} fontWeight="600" fill={colors.stroke}
                   >
                     {item.type.charAt(0).toUpperCase() + item.type.slice(1, 4)}
                   </text>
                 </g>
               );
             })}
-
-            {/* Wheelchair turning radius circle — draggable */}
-            <g onMouseDown={onCircleMouseDown} style={{ cursor: "grab" }}>
-              <circle
-                cx={circlePos.cx * CELL}
-                cy={circlePos.cy * CELL}
-                r={(diameter / 2) * CELL}
-                fill="#7B2FF7"
-                fillOpacity={0.07}
-                stroke="#7B2FF7"
-                strokeWidth={2}
-                strokeDasharray="7 4"
-              />
-              <text
-                x={circlePos.cx * CELL}
-                y={circlePos.cy * CELL + 4}
-                textAnchor="middle"
-                fontSize={9}
-                fill="#7B2FF7"
-                fontWeight="700"
-                style={{ pointerEvents: "none" }}
-              >
-                {TURNING_LABEL[config.wheelchairType]}
-              </text>
-            </g>
           </svg>
         </div>
       </div>
@@ -366,7 +275,6 @@ export function RoomCanvas({ config, onNext }: Props) {
             Place a Door to activate the accessibility overlay
           </span>
         )}
-        <span className="ml-auto text-[#7B2FF7]">Drag the purple circle to check turning space</span>
       </div>
 
       {/* Next button */}

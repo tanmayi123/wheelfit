@@ -3,6 +3,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import { PhaseOne, type RoomConfig } from "./room-planner/PhaseOne";
 import { RoomCanvas, type PlacedItem } from "./room-planner/RoomCanvas";
 import { PhaseThree } from "./room-planner/PhaseThree";
@@ -29,13 +30,22 @@ function MessagePart({
   part,
   messageId,
   index,
+  role,
 }: {
   part: UIMessage["parts"][number];
   messageId: string;
   index: number;
+  role: "user" | "assistant";
 }) {
   if (part.type === "text") {
-    return <p className="whitespace-pre-wrap text-sm leading-relaxed">{part.text}</p>;
+    if (role === "user") {
+      return <p className="whitespace-pre-wrap text-sm leading-relaxed">{part.text}</p>;
+    }
+    return (
+      <div className="prose prose-sm max-w-none prose-headings:font-semibold prose-headings:text-gray-900 prose-p:text-gray-800 prose-li:text-gray-700 prose-strong:text-gray-900 prose-code:text-[#7B2FF7] prose-a:text-[#7B2FF7]">
+        <ReactMarkdown>{part.text}</ReactMarkdown>
+      </div>
+    );
   }
   if (part.type === "file" && part.mediaType?.startsWith("image/")) {
     return (
@@ -190,7 +200,7 @@ export function WheelFitApp() {
         </div>
 
         {/* Phase content */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 min-h-0">
           {step === 1 && <PhaseOne onNext={handlePhaseOneNext} />}
           {step === 2 && roomConfig && (
             <RoomCanvas config={roomConfig} onNext={handleCanvasNext} />
@@ -269,7 +279,19 @@ export function WheelFitApp() {
             </div>
           )}
 
-          {messages.map((message) => (
+          {messages
+            .filter((message) => {
+              // Hide the structured JSON room-analysis messages sent by Phase 3
+              if (message.role !== "user") return true;
+              return !message.parts.some(
+                (p) =>
+                  p.type === "text" &&
+                  (p as { type: "text"; text: string }).text.startsWith(
+                    "You are a wheelchair accessibility furniture advisor for WheelFit"
+                  )
+              );
+            })
+            .map((message) => (
             <div
               key={message.id}
               className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
@@ -287,6 +309,7 @@ export function WheelFitApp() {
                     part={part}
                     messageId={message.id}
                     index={i}
+                    role={message.role as "user" | "assistant"}
                   />
                 ))}
               </div>

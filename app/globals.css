@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 :root {
   --brand: #7b2ff7;
@@ -17,4 +18,59 @@ body {
   background: #fff;
   color: #111;
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Prose table polish for AI chat responses */
+.prose table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.75rem;
+}
+.prose thead th {
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+}
+.prose tbody td {
+  border: 1px solid #e5e7eb;
+  padding: 0.4rem 0.6rem;
+  color: #4b5563;
+}
+.prose tbody tr:nth-child(even) td {
+  background-color: #f9fafb;
+}
+.prose h1, .prose h2, .prose h3 {
+  color: #111827;
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+.prose p {
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+.prose ul, .prose ol {
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+  padding-left: 1.25rem;
+}
+.prose li {
+  margin-top: 0.15rem;
+  margin-bottom: 0.15rem;
+}
+.prose code {
+  background-color: #f3f4f6;
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+  font-size: 0.8em;
+  color: #7B2FF7;
+}
+.prose pre {
+  background-color: #1f2937;
+  color: #f9fafb;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
 }
