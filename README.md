@@ -1,166 +1,48 @@
-# Wayfair × Subconscious Hackathon Starter
+# WheelFit ♿
 
-Build AI agents on **Subconscious** (TIM-Qwen3.6) with the **Vercel AI SDK**. This repo gives you a working chat UI, long-running agent mode, example tools, and an MCP template — so you can focus on your track, not boilerplate.
+> AI-powered accessible furniture advisor for wheelchair users
 
-**Sponsors:** Wayfair · Subconscious · Baseten · Cloudflare
+WheelFit is an AI agent built at the Beat The Clock Agent Hack @ Wayfair HQ during Boston Tech Week 2026. It helps wheelchair users find furniture that actually works for their space — accounting for ADA clearance standards, wheelchair turning radius, and accessibility design.
 
----
+## The Problem
 
-## Pick your track
+People who use wheelchairs deserve a home that works for them, but furniture shopping offers almost no help. There's no easy way to know if a bed allows a safe transfer, if a dresser is reachable from a seated position, or if there's enough floor space to navigate after everything is placed. Most people figure it out after the furniture arrives — or don't buy at all.
 
-Choose one challenge. Your agent should use tools (APIs, MCP, functions) and talk to users through the built-in UI.
+WheelFit solves this before you buy.
 
-### Track 1 — Consumer Shopping Experience
+## How It Works
 
-Millions of customers shop for furniture on Wayfair every day.
+1. **Room Details** — Enter your room dimensions, wheelchair type, and style preference
+2. **Map Your Room** — Drag and drop doors, windows, heaters, and closets onto a visual floor plan. Move the wheelchair turning circle to check clearance
+3. **Get Recommendations** — The agent searches Wayfair, scores every product for accessibility, and returns the best combinations for your specific space
 
-**Challenge:** Build an agent that improves discovery and the buyer experience.
+## Accessibility Scoring System
 
-**Ideas to explore:**
-- Style or room-based product recommendations
-- “Help me furnish this room” from a photo or description
-- Compare options, explain tradeoffs, answer sizing questions
-- Guided search instead of endless filters
+Every product is scored out of 100:
 
-### Track 2 — Supply Chain
+| Criteria | Points | What It Measures |
+|----------|--------|-----------------|
+| Clearance Fit | 35 pts | Leaves 36" wheelchair pathway |
+| Accessibility Design | 25 pts | Open base, correct height, no snag hazards |
+| Floor Footprint | 20 pts | Smaller = more maneuvering room |
+| Style Match | 15 pts | Matches user's aesthetic preference |
+| Price / Value | 5 pts | Relative to category |
 
-Wayfair and its supplier network move huge volumes of furniture worldwide.
+### ADA Rules Hardcoded Into Every Recommendation
+- Minimum 36" pathway clearance beside every piece of furniture
+- 60" × 60" turning zone must remain clear in the room
+- Seat height 17–19" for chairs and sofas
+- Storage max 48" tall for reachability from seated position
+- Open/panel base preferred over 4-leg designs (footrests catch on legs)
 
-**Challenge:** Build an agent that improves Wayfair’s ability to manage its supply chain.
+## Tech Stack
 
-**Ideas to explore:**
-- Track shipments, flag delays, summarize status
-- Answer “where is order X?” or “what’s at risk this week?”
-- Coordinate supplier updates, inventory, or routing decisions
-- Turn messy ops data into clear next steps
+- **Subconscious (TIM model)** — agent orchestration and multi-step tool calling
+- **Anthropic Claude** — accessibility scoring engine
+- **Next.js** — frontend and UI
+- **FastAPI (Python)** — tool endpoints for search and scoring
+- **Playwright** — live Wayfair product crawling
 
-### Track 3 — FinOps & Customer Service
-
-Wayfair runs ~$12B in revenue and serves ~22M customers a year.
-
-**Challenge:** Build an agent system that improves internal operations — financial operations or customer service.
-
-**Ideas to explore:**
-- Triage support tickets and draft responses
-- Look up order/billing history and explain charges
-- Summarize finance or ops metrics for a team
-- Route issues to the right team with context
-
----
-
-## Quick start
-
-**1. Get a Subconscious API key**
-
-Sign up at [subconscious.dev/platform](https://www.subconscious.dev/platform) and copy your key (`sky_...`).
-
-**2. Create a .env.local file with your Subconscious API key**
-
-```bash
-pnpm install
-cp .env.example .env.local
-# Set SUBCONSCIOUS_API_KEY in .env.local
-```
-
-**3. Run the app**
-
-```bash
-pnpm dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-**4. Try the two modes**
-
-- **Chat** — fast Q&A with demo tools (good for prototyping UX)
-- **Agent** — multi-step runs with search, long tasks, and MCP stubs (good for track demos)
-
-Use **Image** to attach a photo (e.g. a photo of a room or box).
-
----
-
-## How to build on this repo
-
-You mostly edit three places:
-
-| What | Where |
-|------|--------|
-| Tools (APIs, data, actions) | `lib/tools/index.ts` |
-| Agent behavior & prompts | `lib/agents/index.ts` |
-| MCP integrations | `lib/tools/mcp-tools.ts` |
-
-### Add a tool
-
-Tools are functions your agent can call. Example:
-
-```typescript
-// lib/tools/index.ts
-export const searchProducts = tool({
-  description: "Search furniture by style, room, or keyword",
-  inputSchema: z.object({ query: z.string() }),
-  execute: async ({ query }) => {
-    // Call your API, mock data, or Cloudflare Worker
-    return { results: [] };
-  },
-});
-```
-
-Add it to `agentTools` in the same file, then customize the prompt in `lib/agents/index.ts` for your track.
-
-### Connect MCP
-
-MCP servers expose tools (files, APIs, databases). Wrap them as AI SDK tools — see `lib/tools/mcp-tools.ts`.
-
-```bash
-pnpm add @modelcontextprotocol/sdk
-```
-
-### Images (multimodal)
-
-The UI sends images as data URLs. Useful for room photos, screenshots, or docs. Details: `.agents/skills/subconscious-dev/references/multimodal.md`.
-
-### Long-running agents
-
-**Agent** mode runs up to 30 tool steps (`lib/agents/index.ts`). The API allows 5-minute runs (`app/api/chat/route.ts`). Increase either if your demo needs it.
-
----
-
-## What’s included
-
-- **Subconscious provider** — `lib/subconscious.ts`
-- **Chat + research agents** — `lib/agents/index.ts`
-- **Example tools** — weather, calculator, web search stub, long task
-- **Streaming API** — `app/api/chat/route.ts`
-- **Chat UI** — `components/chat-app.tsx`
-- **Subconscious API skill** — `.agents/skills/subconscious-dev/` (for Cursor/Codex)
-
-Re-install the skill anytime:
-
-```bash
-npx skills add https://github.com/subconscious-systems/skills --skill subconscious-dev
-```
-
----
-
-## Environment
-
-| Variable | Required |
-|----------|----------|
-| `SUBCONSCIOUS_API_KEY` | Yes — [get one here](https://www.subconscious.dev/platform) |
-
----
-
-## Deploy
-
-Set `SUBCONSCIOUS_API_KEY` on your host, then:
-
-```bash
-pnpm build && pnpm start
-```
-
-Works on Vercel, Cloudflare, or any Node host.
-
----
 
 ## Links
 
